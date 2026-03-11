@@ -1,8 +1,12 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import Chart from 'react-apexcharts';
-import { Search, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, Info, AlertCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Search, TrendingUp, TrendingDown, BarChart3, PieChart, Activity, Info, AlertCircle, Loader2, RefreshCw, Sparkles } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
+import { GoogleGenAI } from "@google/genai";
+
+// Initialize Gemini
+const genAI = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || '' });
 
 // Utility for tailwind classes
 function cn(...inputs: ClassValue[]) {
@@ -115,6 +119,8 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [stockData, setStockData] = useState<any>(null);
   const [ihsgData, setIhsgData] = useState<any>(null);
+  const [aiInsights, setAiInsights] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const fetchStock = async (sym: string, isIhsg = false) => {
     setLoading(true);
@@ -139,6 +145,49 @@ export default function App() {
   useEffect(() => {
     fetchStock('IHSG', true);
   }, []);
+
+  useEffect(() => {
+    const generateAiInsights = async () => {
+      if (!stockData?.news || stockData.news.length === 0) {
+        setAiInsights(null);
+        return;
+      }
+
+      setAiLoading(true);
+      try {
+        const newsContext = stockData.news.map((n: any) => `- ${n.title}`).join('\n');
+        const prompt = `Analisa berita berikut untuk saham ${stockData.symbol} di bursa IDX Indonesia. 
+        Berikan output dalam format JSON dengan struktur:
+        {
+          "summary": "Rangkuman singkat sentimen berita dalam 1-2 kalimat",
+          "insights": ["Poin insight 1", "Poin insight 2"],
+          "recommendation": "BUY/HOLD/SELL",
+          "reason": "Alasan singkat rekomendasi"
+        }
+        
+        Berita:
+        ${newsContext}
+        
+        Gunakan Bahasa Indonesia yang profesional.`;
+
+        const response = await genAI.models.generateContent({
+          model: "gemini-3-flash-preview",
+          contents: prompt,
+          config: { responseMimeType: "application/json" }
+        });
+
+        const result = JSON.parse(response.text || '{}');
+        setAiInsights(result);
+      } catch (err) {
+        console.error("AI Insight error:", err);
+        setAiInsights(null);
+      } finally {
+        setAiLoading(false);
+      }
+    };
+
+    generateAiInsights();
+  }, [stockData?.news, stockData?.symbol]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -283,8 +332,50 @@ export default function App() {
     const rsi = calculateRSI(closes);
     const macd = calculateMACD(closes);
 
+    const fundamentals = stockData.fundamentals;
+
+    const formatFCF = (val: number | null) => {
+      if (val === null) return "N/A";
+      const absVal = Math.abs(val);
+      if (absVal >= 1e12) return `${(val / 1e12).toFixed(2)} T`;
+      if (absVal >= 1e9) return `${(val / 1e9).toFixed(2)} B`;
+      if (absVal >= 1e6) return `${(val / 1e6).toFixed(2)} M`;
+      return val.toLocaleString('id-ID');
+    };
+
     return (
       <div className="space-y-4">
+        {/* Fundamental Indicators */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+          <Card className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Market Cap</span>
+            <span className="text-lg font-bold text-zinc-100">{formatFCF(fundamentals?.marketCap)}</span>
+          </Card>
+          <Card className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">PE Ratio</span>
+            <span className="text-lg font-bold text-zinc-100">{fundamentals?.pe?.toFixed(2) || "N/A"}</span>
+          </Card>
+          <Card className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">PBV</span>
+            <span className="text-lg font-bold text-zinc-100">{fundamentals?.pbv?.toFixed(2) || "N/A"}</span>
+          </Card>
+          <Card className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">FCF</span>
+            <span className="text-lg font-bold text-zinc-100">{formatFCF(fundamentals?.fcf)}</span>
+          </Card>
+          <Card className="p-4 flex flex-col items-center justify-center text-center">
+            <span className="text-[10px] text-zinc-500 uppercase tracking-widest mb-1">Debt/Equity</span>
+            <span className="text-lg font-bold text-zinc-100">{fundamentals?.der ? `${fundamentals.der.toFixed(2)}%` : "N/A"}</span>
+          </Card>
+        </div>
+        
+        {fundamentals?.sector && (
+          <div className="flex gap-4 text-[10px] text-zinc-500 uppercase tracking-widest px-2">
+            <span>Sector: <span className="text-zinc-300">{fundamentals.sector}</span></span>
+            <span>Industry: <span className="text-zinc-300">{fundamentals.industry}</span></span>
+          </div>
+        )}
+
         {/* Candlestick + SMA */}
         <Card className="p-2">
           <Chart
@@ -364,6 +455,83 @@ export default function App() {
             type="line"
             height={150}
           />
+        </Card>
+
+        {/* AI Insight & Rekomendasi */}
+        <Card title="AI Insight & Rekomendasi (Berdasarkan Berita)">
+          {aiLoading ? (
+            <div className="flex flex-col items-center justify-center py-12">
+              <Loader2 className="animate-spin text-blue-500 mb-2" size={24} />
+              <p className="text-xs text-zinc-500">Menganalisa berita dengan AI...</p>
+            </div>
+          ) : aiInsights ? (
+            <div className="space-y-6">
+              <div className="flex items-start gap-3 bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl">
+                <Sparkles className="text-blue-400 shrink-0" size={18} />
+                <div className="space-y-1">
+                  <h4 className="text-xs font-bold text-blue-400 uppercase tracking-wider">Sentimen Pasar</h4>
+                  <p className="text-sm text-zinc-300 leading-relaxed">{aiInsights.summary}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Key Insights</h4>
+                  <ul className="space-y-2">
+                    {aiInsights.insights?.map((item: string, i: number) => (
+                      <li key={i} className="flex gap-2 text-xs text-zinc-400 leading-relaxed">
+                        <div className="w-1 h-1 rounded-full bg-zinc-600 mt-1.5 shrink-0" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="bg-zinc-800/30 p-4 rounded-xl border border-zinc-800 space-y-3">
+                  <h4 className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Rekomendasi Berita</h4>
+                  <div className="flex items-center justify-between">
+                    <span className={cn(
+                      "text-xl font-black tracking-tighter",
+                      aiInsights.recommendation === 'BUY' ? "text-emerald-400" : 
+                      aiInsights.recommendation === 'SELL' ? "text-rose-400" : "text-amber-400"
+                    )}>
+                      {aiInsights.recommendation}
+                    </span>
+                    <div className="text-[10px] text-zinc-500 italic text-right max-w-[150px]">
+                      {aiInsights.reason}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-zinc-800">
+                <h4 className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-3">Sumber Berita Terkait</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {stockData.news?.slice(0, 4).map((item: any, i: number) => (
+                    <a 
+                      key={i} 
+                      href={item.link} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className="flex items-center gap-3 p-2 hover:bg-zinc-800/50 rounded-lg transition-colors group"
+                    >
+                      {item.thumbnail?.resolutions?.[0]?.url ? (
+                        <img src={item.thumbnail.resolutions[0].url} alt="" className="w-10 h-10 rounded object-cover grayscale group-hover:grayscale-0 transition-all" referrerPolicy="no-referrer" />
+                      ) : (
+                        <div className="w-10 h-10 bg-zinc-800 rounded flex items-center justify-center"><Info size={14} className="text-zinc-600" /></div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="text-[10px] text-zinc-300 font-medium truncate">{item.title}</p>
+                        <p className="text-[8px] text-zinc-500">{item.publisher}</p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-zinc-500 italic py-8 text-center">Tidak ada insight AI yang tersedia saat ini.</p>
+          )}
         </Card>
       </div>
     );
