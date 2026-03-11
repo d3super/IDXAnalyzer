@@ -126,10 +126,11 @@ export default function App() {
         if (isIhsg) setIhsgData(data);
         else setStockData(data);
       } else {
-        setError(data.message);
+        setError(data.message || "Failed to fetch market data.");
       }
     } catch (err: any) {
-      setError("Failed to fetch data. Please try again.");
+      console.error("Fetch error:", err);
+      setError("Network error: Could not connect to the analysis server.");
     } finally {
       setLoading(false);
     }
