@@ -166,12 +166,51 @@ export default function App() {
     const lastMacd = macd.macdLine[macd.macdLine.length - 1];
     const lastSignal = macd.signalLine[macd.signalLine.length - 1];
 
+    // Support & Resistance (Last 20 days)
+    const recentData = stockData.data.slice(-20);
+    const support = Math.min(...recentData.map((d: any) => d.low));
+    const resistance = Math.max(...recentData.map((d: any) => d.high));
+    
+    // Trading Plan Logic
+    const stopLoss = support * 0.97; // 3% below support
+    const entryPrice = lastPrice;
+    const risk = entryPrice - stopLoss;
+    const takeProfit = entryPrice + (risk * 2); // Risk/Reward 1:2
+
     // Scoring logic
     let score = 50;
-    if (lastRsi < 30) score += 20; // Oversold
-    if (lastRsi > 70) score -= 20; // Overbought
-    if (lastPrice > lastSma20) score += 15; // Above SMA
-    if (lastMacd && lastSignal && lastMacd > lastSignal) score += 15; // MACD Bullish
+    let insights = [];
+
+    if (lastRsi < 30) {
+      score += 20;
+      insights.push("Kondisi Oversold (RSI < 30) menunjukkan potensi rebound teknikal.");
+    } else if (lastRsi > 70) {
+      score -= 20;
+      insights.push("Kondisi Overbought (RSI > 70) menunjukkan risiko koreksi harga.");
+    } else {
+      insights.push(`RSI berada di level netral (${lastRsi.toFixed(2)}).`);
+    }
+
+    if (lastPrice > lastSma20) {
+      score += 15;
+      insights.push("Harga berada di atas SMA 20, mengonfirmasi tren jangka pendek yang bullish.");
+    } else {
+      score -= 10;
+      insights.push("Harga berada di bawah SMA 20, waspadai tekanan jual jangka pendek.");
+    }
+
+    if (lastMacd && lastSignal && lastMacd > lastSignal) {
+      score += 15;
+      insights.push("MACD Golden Cross terdeteksi, sinyal momentum positif.");
+    } else {
+      insights.push("MACD menunjukkan momentum yang cenderung melemah atau bearish.");
+    }
+
+    if (lastPrice > resistance * 0.98) {
+      insights.push("Harga mendekati area resistance kuat. Waspadai aksi profit taking.");
+    } else if (lastPrice < support * 1.02) {
+      insights.push("Harga berada di area support kuat. Potensi akumulasi beli.");
+    }
 
     let signal = "HOLD";
     if (score > 70) signal = "STRONG BUY";
@@ -187,7 +226,15 @@ export default function App() {
       signal,
       rsi: lastRsi,
       sma20: lastSma20,
-      macd: { line: lastMacd, signal: lastSignal }
+      macd: { line: lastMacd, signal: lastSignal },
+      tradingPlan: {
+        support,
+        resistance,
+        entry: entryPrice,
+        stopLoss,
+        takeProfit
+      },
+      insights
     };
   }, [stockData]);
 
@@ -450,27 +497,49 @@ export default function App() {
                 </div>
               </Card>
 
-              <Card title="Technical Indicators">
+              <Card title="Trading Recommendations">
                 <div className="space-y-4">
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-zinc-400">RSI (14)</span>
-                    <span className={cn("font-mono text-sm", analysis.rsi > 70 ? "text-rose-400" : analysis.rsi < 30 ? "text-emerald-400" : "text-zinc-100")}>{analysis.rsi.toFixed(2)}</span>
+                    <span className="text-xs text-zinc-500 uppercase">Support</span>
+                    <span className="font-mono text-sm text-emerald-400">{analysis.tradingPlan.support.toLocaleString('id-ID')}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-zinc-400">SMA (20)</span>
-                    <span className="font-mono text-sm">{analysis.sma20?.toFixed(2)}</span>
+                    <span className="text-xs text-zinc-500 uppercase">Resistance</span>
+                    <span className="font-mono text-sm text-rose-400">{analysis.tradingPlan.resistance.toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="h-px bg-zinc-800 my-2" />
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-zinc-500 uppercase">Entry Price</span>
+                    <span className="font-mono text-sm text-blue-400">{analysis.tradingPlan.entry.toLocaleString('id-ID')}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="text-sm text-zinc-400">MACD</span>
-                    <span className="font-mono text-sm text-blue-400">{analysis.macd.line?.toFixed(2)}</span>
+                    <span className="text-xs text-zinc-500 uppercase">Stop Loss</span>
+                    <span className="font-mono text-sm text-rose-500">{Math.floor(analysis.tradingPlan.stopLoss).toLocaleString('id-ID')}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-zinc-500 uppercase">Take Profit</span>
+                    <span className="font-mono text-sm text-emerald-500">{Math.floor(analysis.tradingPlan.takeProfit).toLocaleString('id-ID')}</span>
                   </div>
                 </div>
               </Card>
 
-              <Card title="Quick Info">
-                <div className="flex gap-3 text-xs text-zinc-500 leading-relaxed">
-                  <Info size={16} className="shrink-0 text-blue-500" />
-                  <p>Analysis is based on the last 6 months of historical data. Scores are calculated using a proprietary blend of technical indicators.</p>
+              <Card title="Comprehensive Insights">
+                <ul className="space-y-3">
+                  {analysis.insights.map((insight, i) => (
+                    <li key={i} className="flex gap-2 text-xs text-zinc-400 leading-relaxed">
+                      <div className="w-1 h-1 rounded-full bg-blue-500 mt-1.5 shrink-0" />
+                      {insight}
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+
+              <Card title="Disclaimer">
+                <div className="flex gap-3 text-[10px] text-zinc-600 leading-relaxed italic">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <p>
+                    <strong>MANDATORY DISCLAIMER:</strong> Investasi saham memiliki risiko tinggi. Seluruh analisa dan rekomendasi di atas bersifat informatif dan bukan merupakan perintah jual atau beli. Keputusan investasi sepenuhnya berada di tangan investor. IDX Analyzer tidak bertanggung jawab atas kerugian yang mungkin timbul. <strong>DYOR (Do Your Own Research).</strong>
+                  </p>
                 </div>
               </Card>
             </div>
