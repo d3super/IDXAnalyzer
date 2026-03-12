@@ -153,31 +153,43 @@ export default function App() {
         return;
       }
 
+      // Check for API Key (Vercel compatibility)
+      const apiKey = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY;
+      if (!apiKey) {
+        console.warn("Gemini API Key not found. Please set GEMINI_API_KEY or VITE_GEMINI_API_KEY.");
+        setAiInsights({
+          summary: "AI Insight tidak tersedia karena API Key belum dikonfigurasi di lingkungan ini.",
+          insights: ["Pastikan GEMINI_API_KEY telah disetel di Dashboard Vercel."],
+          recommendation: "N/A",
+          reason: "Konfigurasi API Key diperlukan."
+        });
+        return;
+      }
+
       setAiLoading(true);
       try {
-        // Prepare news context from backend if available
+        const genAI = new GoogleGenAI({ apiKey });
+        
         const newsContext = stockData.news && stockData.news.length > 0 
           ? stockData.news.map((n: any) => `- ${n.title}`).join('\n')
-          : "Tidak ada berita spesifik dari feed Yahoo.";
+          : "Tidak ada berita spesifik dari feed internal.";
 
         const cleanSymbol = stockData.symbol.replace('.JK', '');
-        const prompt = `Analisa sentimen pasar TERBARU dan INSTAN untuk saham ${cleanSymbol} (${stockData.symbol}) di Bursa Efek Indonesia (IDX).
+        const prompt = `Analisa sentimen pasar TERBARU untuk saham ${cleanSymbol} (${stockData.symbol}) di Indonesia.
         
-        Tugas Anda:
-        1. Gunakan Google Search untuk mencari berita paling baru (hari ini/minggu ini) mengenai "${cleanSymbol} saham Indonesia" atau "${cleanSymbol} IDX news".
-        2. Fokus HANYA pada sumber berita terpercaya dari Indonesia (CNBC Indonesia, Kontan, Bisnis.com, Detik Finance, dll).
-        3. Gabungkan dengan konteks berita berikut (jika relevan):
-        ${newsContext}
+        Tugas:
+        1. Cari berita hari ini/minggu ini terkait "${cleanSymbol} saham" menggunakan Google Search.
+        2. Rangkum sentimen dari sumber berita Indonesia (CNBC, Kontan, dll).
+        3. Gabungkan dengan data ini: ${newsContext}
         
-        Berikan output dalam format JSON murni dengan struktur:
+        Output JSON:
         {
-          "summary": "Rangkuman sentimen berita terbaru dalam 1-2 kalimat bahasa Indonesia",
-          "insights": ["Insight spesifik 1", "Insight spesifik 2"],
+          "summary": "Rangkuman 1-2 kalimat",
+          "insights": ["Poin 1", "Poin 2"],
           "recommendation": "BUY/HOLD/SELL",
-          "reason": "Alasan singkat rekomendasi berdasarkan berita dan sentimen terkini"
-        }
-        
-        Pastikan analisa sangat spesifik terhadap kondisi pasar modal Indonesia saat ini.`;
+          "reason": "Alasan singkat",
+          "sources": [] 
+        }`;
 
         const response = await genAI.models.generateContent({
           model: "gemini-3-flash-preview",
@@ -189,17 +201,32 @@ export default function App() {
         });
 
         const result = JSON.parse(response.text || '{}');
+        
+        // Extract grounding sources if available
+        const groundingChunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks;
+        if (groundingChunks) {
+          result.sources = groundingChunks
+            .map((chunk: any) => chunk.web?.uri)
+            .filter((uri: string | undefined): uri is string => !!uri)
+            .slice(0, 3);
+        }
+
         setAiInsights(result);
       } catch (err) {
         console.error("AI Insight error:", err);
-        setAiInsights(null);
+        setAiInsights({
+          summary: "Gagal memproses analisa AI saat ini.",
+          insights: ["Terjadi kesalahan teknis saat menghubungi server AI."],
+          recommendation: "N/A",
+          reason: "Error: " + (err instanceof Error ? err.message : "Unknown error")
+        });
       } finally {
         setAiLoading(false);
       }
     };
 
     generateAiInsights();
-  }, [stockData?.symbol]); // Only trigger when symbol changes to avoid redundant calls
+  }, [stockData?.symbol]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -513,6 +540,21 @@ export default function App() {
                       {aiInsights.reason}
                     </div>
                   </div>
+                  {aiInsights.sources && aiInsights.sources.length > 0 && (
+                    <div className="mt-2 pt-2 border-t border-zinc-700/50 flex flex-wrap gap-2">
+                      {aiInsights.sources.map((url: string, idx: number) => (
+                        <a 
+                          key={idx} 
+                          href={url} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="text-[9px] text-blue-400 hover:underline truncate max-w-[100px]"
+                        >
+                          {new URL(url).hostname.replace('www.', '')}
+                        </a>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
 

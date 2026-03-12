@@ -132,18 +132,18 @@ app.get("/api/stock/:symbol", async (req, res) => {
       console.error("Fundamentals fetch error:", e);
     }
 
-    // Fetch News (Yahoo Finance search) - Increased count to allow filtering
-    // We search for the symbol + "Indonesia" to get more relevant local news
+    // Fetch News (Yahoo Finance search) - Using query2 which is often more resilient
     const newsSearchQuery = symbol === "IHSG" ? "IHSG Indonesia" : `${symbol} Saham Indonesia`;
-    const newsUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(newsSearchQuery)}&newsCount=25`;
+    const newsUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(newsSearchQuery)}&newsCount=25`;
     let news = [];
 
     try {
       const newsResponse = await fetch(newsUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
           'Accept': 'application/json',
-          'Referer': 'https://finance.yahoo.com/'
+          'Referer': 'https://finance.yahoo.com/',
+          'Cache-Control': 'no-cache'
         }
       });
 
