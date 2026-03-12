@@ -132,18 +132,16 @@ app.get("/api/stock/:symbol", async (req, res) => {
       console.error("Fundamentals fetch error:", e);
     }
 
-    // Fetch News (Yahoo Finance search) - Using query2 which is often more resilient
-    const newsSearchQuery = symbol === "IHSG" ? "IHSG Indonesia" : `${symbol} Saham Indonesia`;
-    const newsUrl = `https://query2.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(newsSearchQuery)}&newsCount=25`;
+    // Fetch News (Yahoo Finance search) - Increased count to allow filtering
+    const newsUrl = `https://query1.finance.yahoo.com/v1/finance/search?q=${encodedSymbol}&newsCount=20`;
     let news = [];
 
     try {
       const newsResponse = await fetch(newsUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
           'Accept': 'application/json',
-          'Referer': 'https://finance.yahoo.com/',
-          'Cache-Control': 'no-cache'
+          'Referer': 'https://finance.yahoo.com/'
         }
       });
 
@@ -152,30 +150,17 @@ app.get("/api/stock/:symbol", async (req, res) => {
         const rawNews = newsJson.news || [];
         
         // Filter for specific Indonesian sources
-        const allowedSources = [
-          "Bloomberg Technoz", "Kontan", "IDNFinancials", "Investor.id", 
-          "Investor Daily", "Bisnis.com", "CNBC Indonesia", "Detik", 
-          "Kompas", "Tempo", "Antara", "Liputan6", "Sindonews", "Okezone"
-        ];
-        
+        const allowedSources = ["Bloomberg Technoz", "Kontan", "IDNFinancials", "Investor.id", "Investor Daily", "Bisnis.com"];
         news = rawNews.filter((item: any) => {
           const publisher = item.publisher?.toLowerCase() || "";
-          const title = item.title?.toLowerCase() || "";
-          
-          // Check if publisher is in our allowed list
-          const isAllowedSource = allowedSources.some(source => publisher.includes(source.toLowerCase()));
-          
-          // Or if the title contains Indonesian keywords if it's a general source
-          const hasIndoKeywords = title.includes("saham") || title.includes("idx") || title.includes("ihsg") || title.includes("rupiah");
-          
-          return isAllowedSource || (hasIndoKeywords && !publisher.includes("yahoo"));
+          return allowedSources.some(source => publisher.includes(source.toLowerCase()));
         });
 
-        // Limit and fallback
+        // If no specific sources found, fallback to general news but prioritize Indonesian ones
         if (news.length === 0) {
           news = rawNews.slice(0, 5);
         } else {
-          news = news.slice(0, 8);
+          news = news.slice(0, 5);
         }
       }
     } catch (e) {
