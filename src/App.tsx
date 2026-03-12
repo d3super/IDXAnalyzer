@@ -148,32 +148,44 @@ export default function App() {
 
   useEffect(() => {
     const generateAiInsights = async () => {
-      if (!stockData?.news || stockData.news.length === 0) {
+      if (!stockData?.symbol) {
         setAiInsights(null);
         return;
       }
 
       setAiLoading(true);
       try {
-        const newsContext = stockData.news.map((n: any) => `- ${n.title}`).join('\n');
-        const prompt = `Analisa berita berikut untuk saham ${stockData.symbol} di bursa IDX Indonesia. 
-        Berikan output dalam format JSON dengan struktur:
-        {
-          "summary": "Rangkuman singkat sentimen berita dalam 1-2 kalimat",
-          "insights": ["Poin insight 1", "Poin insight 2"],
-          "recommendation": "BUY/HOLD/SELL",
-          "reason": "Alasan singkat rekomendasi"
-        }
+        // Prepare news context from backend if available
+        const newsContext = stockData.news && stockData.news.length > 0 
+          ? stockData.news.map((n: any) => `- ${n.title}`).join('\n')
+          : "Tidak ada berita spesifik dari feed Yahoo.";
+
+        const cleanSymbol = stockData.symbol.replace('.JK', '');
+        const prompt = `Analisa sentimen pasar TERBARU dan INSTAN untuk saham ${cleanSymbol} (${stockData.symbol}) di Bursa Efek Indonesia (IDX).
         
-        Berita:
+        Tugas Anda:
+        1. Gunakan Google Search untuk mencari berita paling baru (hari ini/minggu ini) mengenai "${cleanSymbol} saham Indonesia" atau "${cleanSymbol} IDX news".
+        2. Fokus HANYA pada sumber berita terpercaya dari Indonesia (CNBC Indonesia, Kontan, Bisnis.com, Detik Finance, dll).
+        3. Gabungkan dengan konteks berita berikut (jika relevan):
         ${newsContext}
         
-        Gunakan Bahasa Indonesia yang profesional.`;
+        Berikan output dalam format JSON murni dengan struktur:
+        {
+          "summary": "Rangkuman sentimen berita terbaru dalam 1-2 kalimat bahasa Indonesia",
+          "insights": ["Insight spesifik 1", "Insight spesifik 2"],
+          "recommendation": "BUY/HOLD/SELL",
+          "reason": "Alasan singkat rekomendasi berdasarkan berita dan sentimen terkini"
+        }
+        
+        Pastikan analisa sangat spesifik terhadap kondisi pasar modal Indonesia saat ini.`;
 
         const response = await genAI.models.generateContent({
           model: "gemini-3-flash-preview",
           contents: prompt,
-          config: { responseMimeType: "application/json" }
+          config: { 
+            responseMimeType: "application/json",
+            tools: [{ googleSearch: {} }]
+          }
         });
 
         const result = JSON.parse(response.text || '{}');
@@ -187,7 +199,7 @@ export default function App() {
     };
 
     generateAiInsights();
-  }, [stockData?.news, stockData?.symbol]);
+  }, [stockData?.symbol]); // Only trigger when symbol changes to avoid redundant calls
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
